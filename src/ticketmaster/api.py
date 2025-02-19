@@ -33,6 +33,7 @@ class TicketmasterAPI:
             'Pragma': 'no-cache',
             'Cache-Control': 'no-cache',
             'TE': 'trailers'
+            'Cookie': 'eps_sid=4daa335f884baac772942a5a2fd8af578054442e; LANGUAGE=en-us; BID=KHniJk5QYFjj4jW9OrBCRgZHMHra6XKGcPcL-PYq7OHfCuPTYWuTLcRDVdLBIjV_zf_X7R_KahANbx3Q; TMUO=east_sfm2BBCbFA38g97mQsBUmgSjqiO6URCbBG7+0pOpDz0=; SID=SRiFKhpmqY-1KACmt0Md6tISWwhIMCUpl8YSJnEae_SqFIjtBaFe1U3DvkATK-tAot0ZyRiCNlIuKzyFOZdT; tmpt=0:7776c4ae0e000000:1738740211:30a2956c:258cf3f342a155d321090f8804f60f75:cb7ab7fd201ca5b07785ebdff08a1e6be8b54bdd186f9849530e6e00f069ff00',
         }
 
     def search_events(self, event_name: str, location: str, start_date: str, end_date: str) -> List[Dict]:
