@@ -51,24 +51,39 @@ def get_events():
 def create_event():
     try:
         data = request.json
-        # Validate city_id
-        city_id = int(data['city_id'])
-        if city_id not in [cid for cid in CITY_URL_MAP.values()]:
-            return jsonify({'error': 'Invalid city ID'}), 400
+        
+        # Validate website-specific fields
+        website = data['website']
+        if website not in ['TodayTix', 'TicketMaster']:
+            return jsonify({'error': 'Invalid website'}), 400
+
+        # Validate city based on website
+        if website == 'TodayTix':
+            if data.get('city_id') is None:
+                return jsonify({'error': 'City ID is required for TodayTix events'}), 400
+            # Validate city_id only for TodayTix
+            city_id = int(data['city_id']) if data.get('city_id') else None
+            if city_id and city_id not in CITY_URL_MAP.values():
+                return jsonify({'error': 'Invalid city ID'}), 400
+            custom_city = None
+        else:  # TicketMaster
+            if not data.get('custom_city'):
+                return jsonify({'error': 'City name is required for TicketMaster events'}), 400
+            city_id = None
+            custom_city = data['custom_city']
 
         # Validate in_hand value
         in_hand = data.get('in_hand', 'N').strip().upper()
         if in_hand not in ['Y', 'N']:
             return jsonify({'error': 'Invalid in_hand value. Use Y or N'}), 400
 
+        # Create event object
         event = Event(
-            website=data['website'],
+            website=website,
             event_id=data['event_id'],
-            todaytix_event_id=data.get('todaytix_event_id'),
-            todaytix_show_id=data.get('todaytix_show_id'),
-            ticketmaster_id=data.get('ticketmaster_id'),
             event_name=data['event_name'],
             city_id=city_id,
+            custom_city=custom_city,
             event_date=datetime.strptime(data['event_date'], '%Y-%m-%d').date(),
             event_time=data['event_time'],
             venue_name=data.get('venue_name'),
@@ -80,12 +95,25 @@ def create_event():
             internal_notes=data.get('internal_notes'),
             first_scrape_completed=False
         )
+
+        # Set website-specific fields
+        if website == 'TodayTix':
+            event.todaytix_event_id = data.get('todaytix_event_id')
+            event.todaytix_show_id = data.get('todaytix_show_id')
+            event.ticketmaster_id = None
+        else:
+            event.ticketmaster_id = data.get('ticketmaster_id')
+            event.todaytix_event_id = None
+            event.todaytix_show_id = None
+
         db.session.add(event)
         db.session.commit()
         return jsonify(event.to_dict()), 201
+
     except ValueError as e:
         return jsonify({'error': str(e)}), 400
     except Exception as e:
+        db.session.rollback()
         return jsonify({'error': str(e)}), 500
 
 @bp.route('/api/events/<int:id>', methods=['GET'])
@@ -153,25 +181,37 @@ def delete_event(id):
 @bp.route('/api/events/template', methods=['GET'])
 @login_required
 def download_template():
-    csv.writer.writerow([
+    output = StringIO()
+    writer = csv.writer(output)
+    
+    writer.writerow([
         'website', 'event_id', 'event_name', 'city',
         'event_date', 'event_time', 'todaytix_event_id',
         'todaytix_show_id', 'ticketmaster_id', 'venue_name', 'markup',
         'stock_type', 'in_hand', 'in_hand_date', 'double_check', 'internal_notes'
     ])
     
-    # Update sample rows
-    csv.writer.writerow([
+    writer.writerow([
         'TodayTix', 'EVT_001', 'Sample Event', 'New York',
         '2024-01-01', '19:30', '123456', '789', '', 'Sample Theater', '1.6',
         'ELECTRONIC', 'N', '2025-02-12', 'No', 'Sample notes'
     ])
     
-    csv.writer.writerow([
+    writer.writerow([
         'TicketMaster', 'EVT_002', 'Sample Event 2', 'New York',
         '2024-01-01', '19:30', '', '', 'TM123456', 'Sample Theater', '1.6',
         'ELECTRONIC', 'N', '2025-02-12', 'Yes', 'Double check needed'
     ])
+    
+    output.seek(0)
+    return current_app.response_class(
+        output.getvalue(),
+        mimetype='text/csv',
+        headers={
+            "Content-Disposition": "attachment; filename=event_template.csv",
+            "Content-Type": "text/csv; charset=utf-8"
+        }
+    )
 
 
 @bp.route('/api/events/import', methods=['POST'])

@@ -253,7 +253,7 @@
                 <div>
                     <label class="block text-sm font-medium text-gray-700">Double Check</label>
                     <select id="doubleCheck" name="double_check"
-                            class="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2">
+                        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2">
                         <option value="false">No</option>
                         <option value="true">Yes</option>
                     </select>
@@ -262,8 +262,7 @@
                 <div>
                     <label class="block text-sm font-medium text-gray-700">Internal Notes</label>
                     <textarea id="internalNotes" name="internal_notes"
-                              class="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2"
-                              rows="3"></textarea>
+                        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2" rows="3"></textarea>
                 </div>
 
                 <div class="flex justify-end space-x-2">
@@ -284,22 +283,50 @@
 
     function toggleWebsiteFields() {
         const website = document.getElementById('website').value;
-        const todaytixFields = document.querySelectorAll('.todaytix-field');
-        const ticketmasterFields = document.querySelectorAll('.ticketmaster-field');
+        const todaytixFields = document.getElementById('todaytixFields');
+        const ticketmasterFields = document.getElementById('ticketmasterFields');
         const citySelect = document.getElementById('citySelect');
         const customCity = document.getElementById('customCity');
 
+        // Handle main website-specific fields containers
         if (website === 'TodayTix') {
-            todaytixFields.forEach(field => field.classList.remove('hidden'));
-            ticketmasterFields.forEach(field => field.classList.add('hidden'));
+            // Show TodayTix fields, hide TicketMaster fields
+            todaytixFields.classList.remove('hidden');
+            ticketmasterFields.classList.add('hidden');
+
+            // Show city select dropdown, hide custom city input
+            citySelect.classList.remove('hidden');
+            customCity.classList.add('hidden');
+
+            // Update required fields
             citySelect.required = true;
             customCity.required = false;
+            document.getElementById('todaytixEventId').required = true;
+            document.getElementById('todaytixShowId').required = true;
+            document.getElementById('ticketmasterId').required = false;
+
+            // Clear TicketMaster values
+            document.getElementById('ticketmasterId').value = '';
             customCity.value = '';
         } else {
-            todaytixFields.forEach(field => field.classList.add('hidden'));
-            ticketmasterFields.forEach(field => field.classList.remove('hidden'));
+            // Show TicketMaster fields, hide TodayTix fields
+            todaytixFields.classList.add('hidden');
+            ticketmasterFields.classList.remove('hidden');
+
+            // Show custom city input, hide city select dropdown
+            citySelect.classList.add('hidden');
+            customCity.classList.remove('hidden');
+
+            // Update required fields
             citySelect.required = false;
             customCity.required = true;
+            document.getElementById('todaytixEventId').required = false;
+            document.getElementById('todaytixShowId').required = false;
+            document.getElementById('ticketmasterId').required = true;
+
+            // Clear TodayTix values
+            document.getElementById('todaytixEventId').value = '';
+            document.getElementById('todaytixShowId').value = '';
             citySelect.value = '';
         }
     }
@@ -309,115 +336,116 @@
     }
 
     async function editEvent(id) {
-    try {
-        const response = await fetch(`/api/events/${id}`);
-        if (response.ok) {
-            const event = await response.json();
-            
-            // Set the form values
-            document.getElementById('eventId').value = event.id;
-            document.getElementById('website').value = event.website;
-            document.getElementById('eventIdInput').value = event.event_id;
-            document.getElementById('eventName').value = event.event_name;
-            document.getElementById('eventDate').value = event.event_date;
-            document.getElementById('eventTime').value = event.event_time;
-            document.getElementById('venueName').value = event.venue_name || '';
-            document.getElementById('markup').value = event.markup;
-            document.getElementById('stockType').value = event.stock_type || '';
-            document.getElementById('inHand').value = event.in_hand || 'N';
-            document.getElementById('inHandDate').value = event.in_hand_date || '';
-            document.getElementById('doubleCheck').value = event.double_check.toString();
-            document.getElementById('internalNotes').value = event.internal_notes || '';
-
-            // Handle website-specific fields
-            if (event.website === 'TodayTix') {
-                document.getElementById('citySelect').value = event.city_id || '';
-                document.getElementById('customCity').value = '';
-                document.getElementById('todaytixEventId').value = event.todaytix_event_id || '';
-                document.getElementById('todaytixShowId').value = event.todaytix_show_id || '';
-                document.getElementById('ticketmasterId').value = '';
-            } else {
-                document.getElementById('citySelect').value = '';
-                document.getElementById('customCity').value = event.custom_city || '';
-                document.getElementById('ticketmasterId').value = event.ticketmaster_id || '';
-                document.getElementById('todaytixEventId').value = '';
-                document.getElementById('todaytixShowId').value = '';
-            }
-
-            // Toggle fields visibility based on website
-            toggleWebsiteFields();
-            showEventModal(true);
-        } else {
-            throw new Error('Failed to fetch event data');
-        }
-    } catch (error) {
-        console.error('Error editing event:', error);
-        alert('Error editing event: ' + error.message);
-    }
-}
-    document.getElementById('eventForm').addEventListener('submit', async (e) => {
-        e.preventDefault();
-
-        const formData = new FormData(e.target);
-        const id = formData.get('id');
-        const website = formData.get('website');
-        const method = id ? 'PUT' : 'POST';
-        const url = id ? `/api/events/${id}` : '/api/events';
-
-        const requestData = {
-            website: website,
-            event_id: formData.get('event_id'),
-            event_name: formData.get('event_name'),
-            event_date: formData.get('event_date'),
-            event_time: formData.get('event_time'),
-            venue_name: formData.get('venue_name') || null,
-            markup: parseFloat(formData.get('markup')),
-            stock_type: formData.get('stock_type') || null,
-            in_hand: formData.get('in_hand') || 'N',
-            in_hand_date: formData.get('in_hand_date') || null,
-            double_check: formData.get('double_check') === 'true',
-            internal_notes: formData.get('internal_notes')
-        };
-
-        // Handle city data based on website
-        if (website === 'TodayTix') {
-            requestData.city_id = parseInt(formData.get('city_id'));
-            requestData.custom_city = null;
-        } else {
-            requestData.city_id = null;
-            requestData.custom_city = formData.get('custom_city');
-        }
-
-        // Add website-specific fields
-        if (website === 'TodayTix') {
-            requestData.todaytix_event_id = formData.get('todaytix_event_id') || null;
-            requestData.todaytix_show_id = formData.get('todaytix_show_id') || null;
-            requestData.ticketmaster_id = null;
-        } else {
-            requestData.ticketmaster_id = formData.get('ticketmaster_id') || null;
-            requestData.todaytix_event_id = null;
-            requestData.todaytix_show_id = null;
-        }
-
         try {
-            const response = await fetch(url, {
-                method,
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify(requestData)
-            });
-
+            const response = await fetch(`/api/events/${id}`);
             if (response.ok) {
-                location.reload();
+                const event = await response.json();
+
+                // Set the form values
+                document.getElementById('eventId').value = event.id;
+                document.getElementById('website').value = event.website;
+                document.getElementById('eventIdInput').value = event.event_id;
+                document.getElementById('eventName').value = event.event_name;
+                document.getElementById('eventDate').value = event.event_date;
+                document.getElementById('eventTime').value = event.event_time;
+                document.getElementById('venueName').value = event.venue_name || '';
+                document.getElementById('markup').value = event.markup;
+                document.getElementById('stockType').value = event.stock_type || '';
+                document.getElementById('inHand').value = event.in_hand || 'N';
+                document.getElementById('inHandDate').value = event.in_hand_date || '';
+                document.getElementById('doubleCheck').value = event.double_check.toString();
+                document.getElementById('internalNotes').value = event.internal_notes || '';
+
+                // Handle website-specific fields
+                if (event.website === 'TodayTix') {
+                    document.getElementById('citySelect').value = event.city_id || '';
+                    document.getElementById('customCity').value = '';
+                    document.getElementById('todaytixEventId').value = event.todaytix_event_id || '';
+                    document.getElementById('todaytixShowId').value = event.todaytix_show_id || '';
+                    document.getElementById('ticketmasterId').value = '';
+                } else {
+                    document.getElementById('citySelect').value = '';
+                    document.getElementById('customCity').value = event.custom_city || '';
+                    document.getElementById('ticketmasterId').value = event.ticketmaster_id || '';
+                    document.getElementById('todaytixEventId').value = '';
+                    document.getElementById('todaytixShowId').value = '';
+                }
+
+                // Toggle fields visibility based on website
+                toggleWebsiteFields();
+                showEventModal(true);
             } else {
-                const error = await response.json();
-                alert('Error saving event: ' + (error.error || 'Unknown error'));
+                throw new Error('Failed to fetch event data');
             }
         } catch (error) {
-            alert('Error saving event: ' + error.message);
+            console.error('Error editing event:', error);
+            alert('Error editing event: ' + error.message);
         }
-    });
+    }
+    
+    document.getElementById('eventForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+
+    const formData = new FormData(e.target);
+    const id = formData.get('id');
+    const website = formData.get('website');
+    const method = id ? 'PUT' : 'POST';
+    const url = id ? `/api/events/${id}` : '/api/events';
+
+    const requestData = {
+        website: website,
+        event_id: formData.get('event_id'),
+        event_name: formData.get('event_name'),
+        event_date: formData.get('event_date'),
+        event_time: formData.get('event_time'),
+        venue_name: formData.get('venue_name') || null,
+        markup: parseFloat(formData.get('markup')),
+        stock_type: formData.get('stock_type') || null,
+        in_hand: formData.get('in_hand') || 'N',
+        in_hand_date: formData.get('in_hand_date') || null,
+        double_check: formData.get('double_check') === 'true',
+        internal_notes: formData.get('internal_notes'),
+        city_id: null,
+        custom_city: null
+    };
+
+    // Handle city data based on website
+    if (website === 'TodayTix') {
+        const cityId = formData.get('city_id');
+        requestData.city_id = cityId ? parseInt(cityId) : null;
+        requestData.custom_city = null;
+        // Add TodayTix specific fields
+        requestData.todaytix_event_id = formData.get('todaytix_event_id') || null;
+        requestData.todaytix_show_id = formData.get('todaytix_show_id') || null;
+        requestData.ticketmaster_id = null;
+    } else {
+        requestData.city_id = null;
+        requestData.custom_city = formData.get('custom_city') || null;
+        // Add Ticketmaster specific fields
+        requestData.ticketmaster_id = formData.get('ticketmaster_id') || null;
+        requestData.todaytix_event_id = null;
+        requestData.todaytix_show_id = null;
+    }
+
+    try {
+        const response = await fetch(url, {
+            method,
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(requestData)
+        });
+
+        if (response.ok) {
+            location.reload();
+        } else {
+            const error = await response.json();
+            alert('Error saving event: ' + (error.error || 'Unknown error'));
+        }
+    } catch (error) {
+        alert('Error saving event: ' + error.message);
+    }
+});
 
     function showEventModal(isEdit = false) {
         document.getElementById('modalTitle').textContent = isEdit ? 'Edit Event' : 'Add Event';
