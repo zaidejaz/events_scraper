@@ -304,30 +304,21 @@
         }
     }
 
-
-    function showEventModal(isEdit = false) {
-        document.getElementById('modalTitle').textContent = isEdit ? 'Edit Event' : 'Add Event';
-        if (!isEdit) {
-            document.getElementById('eventId').value = '';
-            document.getElementById('eventForm').reset();
-            toggleWebsiteFields();
-        }
-        document.getElementById('eventModal').classList.remove('hidden');
-    }
-
     function closeModal() {
         document.getElementById('eventModal').classList.add('hidden');
     }
 
     async function editEvent(id) {
+    try {
         const response = await fetch(`/api/events/${id}`);
         if (response.ok) {
             const event = await response.json();
+            
+            // Set the form values
             document.getElementById('eventId').value = event.id;
             document.getElementById('website').value = event.website;
             document.getElementById('eventIdInput').value = event.event_id;
             document.getElementById('eventName').value = event.event_name;
-            document.getElementById('city').value = event.city_id;
             document.getElementById('eventDate').value = event.event_date;
             document.getElementById('eventTime').value = event.event_time;
             document.getElementById('venueName').value = event.venue_name || '';
@@ -340,21 +331,30 @@
 
             // Handle website-specific fields
             if (event.website === 'TodayTix') {
+                document.getElementById('citySelect').value = event.city_id || '';
+                document.getElementById('customCity').value = '';
                 document.getElementById('todaytixEventId').value = event.todaytix_event_id || '';
                 document.getElementById('todaytixShowId').value = event.todaytix_show_id || '';
                 document.getElementById('ticketmasterId').value = '';
             } else {
+                document.getElementById('citySelect').value = '';
+                document.getElementById('customCity').value = event.custom_city || '';
                 document.getElementById('ticketmasterId').value = event.ticketmaster_id || '';
                 document.getElementById('todaytixEventId').value = '';
                 document.getElementById('todaytixShowId').value = '';
             }
 
-            // Toggle fields visibility
+            // Toggle fields visibility based on website
             toggleWebsiteFields();
             showEventModal(true);
+        } else {
+            throw new Error('Failed to fetch event data');
         }
+    } catch (error) {
+        console.error('Error editing event:', error);
+        alert('Error editing event: ' + error.message);
     }
-
+}
     document.getElementById('eventForm').addEventListener('submit', async (e) => {
         e.preventDefault();
 
