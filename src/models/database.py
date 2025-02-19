@@ -14,7 +14,8 @@ class Event(db.Model):
     todaytix_show_id = db.Column(db.String(255), nullable=True)
     ticketmaster_id = db.Column(db.String(255), nullable=True) 
     event_name = db.Column(db.String(255), nullable=False)
-    city_id = db.Column(db.Integer, nullable=False)
+    city_id = db.Column(db.Integer, nullable=True)
+    custom_city = db.Column(db.String(100), nullable=True)
     event_date = db.Column(db.Date, nullable=False)
     event_time = db.Column(db.String(50), nullable=False)
     venue_name = db.Column(db.String(255), nullable=True)
@@ -22,6 +23,9 @@ class Event(db.Model):
     stock_type = db.Column(db.String(50), nullable=True) 
     in_hand_date = db.Column(db.Date, nullable=True)   
     in_hand = db.Column(db.String(25), nullable=True)
+    internal_notes = db.Column(db.Text, nullable=True)
+    double_check = db.Column(db.Boolean, default=False)
+    first_scrape_completed = db.Column(db.Boolean, default=False)
     created_at = db.Column(db.DateTime, server_default=func.now())
     updated_at = db.Column(db.DateTime, server_default=func.now(), onupdate=func.now())
 
@@ -49,6 +53,9 @@ class Event(db.Model):
             'stock_type': self.stock_type,
             'in_hand_date': self.in_hand_date.isoformat() if self.in_hand_date else None,
             'in_hand': self.in_hand,
+            'internal_notes': self.internal_notes,
+            'double_check': self.double_check,
+            'first_scrape_completed': self.first_scrape_completed,
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'updated_at': self.updated_at.isoformat() if self.updated_at else None
         }

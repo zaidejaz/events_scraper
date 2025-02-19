@@ -3,15 +3,18 @@ from flask import Blueprint, jsonify, render_template, request, current_app
 from flask_login import login_required
 import csv
 from io import StringIO
+
+from src.city_utils import CityMapper
 from ..todaytix.api import TodayTixAPI
 from ..constants import CITY_URL_MAP
 
 bp = Blueprint('todaytix_events', __name__)
+city_mapper = CityMapper()
 
 @bp.route('/todaytix-events')
 @login_required
 def todaytix_events_page():
-    return render_template('todaytix_events.html', cities=CITY_URL_MAP)
+    return render_template('todaytix_events.html', cities=city_mapper.get_all_cities())
 
 @bp.route('/api/todaytix-events/search', methods=['POST'])
 @login_required
@@ -19,7 +22,8 @@ def search_events():
     try:
         data = request.json
         event_name = data.get('event_name')
-        city_id = int(data.get('city_id'))
+        city = data.get('city')
+        city_id = city_mapper.get_todaytix_id(city)
         start_date = datetime.strptime(data.get('start_date'), '%Y-%m-%d').date()
         end_date = datetime.strptime(data.get('end_date'), '%Y-%m-%d').date()
 

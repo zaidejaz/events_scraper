@@ -21,6 +21,12 @@ def get_city_name_by_id(city_id):
             return city_name
     return None
 
+def get_city_name(event):
+    """Get city name from event, handling both mapped and custom cities"""
+    if event.custom_city:
+        return event.custom_city
+    return get_city_name_by_id(event.city_id)
+
 @bp.route('/')
 @login_required
 def index():
@@ -69,7 +75,10 @@ def create_event():
             markup=float(data['markup']),
             stock_type=data.get('stock_type'),
             in_hand=in_hand,
-            in_hand_date=datetime.strptime(data['in_hand_date'], '%Y-%m-%d').date() if data.get('in_hand_date') else None
+            in_hand_date=datetime.strptime(data['in_hand_date'], '%Y-%m-%d').date() if data.get('in_hand_date') else None,
+            double_check=data.get('double_check', False),
+            internal_notes=data.get('internal_notes'),
+            first_scrape_completed=False
         )
         db.session.add(event)
         db.session.commit()
@@ -122,6 +131,8 @@ def update_event(id):
         event.stock_type = data.get('stock_type')
         event.in_hand = in_hand
         event.in_hand_date = datetime.strptime(data['in_hand_date'], '%Y-%m-%d').date() if data.get('in_hand_date') else None
+        event.double_check = data.get('double_check', False)
+        event.internal_notes = data.get('internal_notes')
         
         db.session.commit()
         return jsonify(event.to_dict())
@@ -142,37 +153,26 @@ def delete_event(id):
 @bp.route('/api/events/template', methods=['GET'])
 @login_required
 def download_template():
-    output = StringIO()
-    writer = csv.writer(output)
-    writer.writerow([
-        'website', 'event_id', 'event_name', 'city', 
-        'event_date', 'event_time', 'todaytix_event_id', 
+    csv.writer.writerow([
+        'website', 'event_id', 'event_name', 'city',
+        'event_date', 'event_time', 'todaytix_event_id',
         'todaytix_show_id', 'ticketmaster_id', 'venue_name', 'markup',
-        'stock_type', 'in_hand', 'in_hand_date' 
+        'stock_type', 'in_hand', 'in_hand_date', 'double_check', 'internal_notes'
     ])
     
-    # Add sample row
-    writer.writerow([
-        'TodayTix', 'EVT_001', 'Sample Event', 'New York', 
+    # Update sample rows
+    csv.writer.writerow([
+        'TodayTix', 'EVT_001', 'Sample Event', 'New York',
         '2024-01-01', '19:30', '123456', '789', '', 'Sample Theater', '1.6',
-        'ELECTRONIC', 'N', '2025-02-12'
+        'ELECTRONIC', 'N', '2025-02-12', 'No', 'Sample notes'
     ])
     
-    # Add Ticketmaster sample row
-    writer.writerow([
-        'TicketMaster', 'EVT_002', 'Sample Event 2', 'New York', 
+    csv.writer.writerow([
+        'TicketMaster', 'EVT_002', 'Sample Event 2', 'New York',
         '2024-01-01', '19:30', '', '', 'TM123456', 'Sample Theater', '1.6',
-        'ELECTRONIC', 'N', '2025-02-12'
+        'ELECTRONIC', 'N', '2025-02-12', 'Yes', 'Double check needed'
     ])
-    
-    output.seek(0)
-    return current_app.response_class(
-        output.getvalue(),
-        mimetype='text/csv',
-        headers={
-            "Content-Disposition": "attachment;filename=event_template.csv"
-        }
-    )
+
 
 @bp.route('/api/events/import', methods=['POST'])
 @login_required
@@ -208,10 +208,8 @@ def import_events():
                         skipped_count += 1
                         continue
                         
-                    city_id = get_city_id_by_name(row['city'])
-                    if city_id is None:
-                        errors.append(f"Row {row_num}: Invalid city name '{row['city']}'")
-                        continue
+                    city_name = row['city'].strip()
+                    city_id = get_city_id_by_name(city_name)
                     
                     # Parse dates
                     in_hand_date = None
@@ -235,14 +233,18 @@ def import_events():
                         todaytix_show_id=row['todaytix_show_id'].strip() if row.get('todaytix_show_id') else None,
                         ticketmaster_id=row['ticketmaster_id'].strip() if row.get('ticketmaster_id') else None,
                         event_name=row['event_name'].strip(),
-                        city_id=city_id,
+                        city_id=city_id,  # This will be None for unmapped cities
+                        custom_city=None if city_id else city_name,  # Store custom city name if not mapped
                         event_date=datetime.strptime(row['event_date'].strip(), '%Y-%m-%d').date(),
                         event_time=row['event_time'].strip(),
-                        venue_name=row['venue_name'].strip() or None,
+                        venue_name=row['venue_name'].strip() if row.get('venue_name') else None,
                         markup=float(row['markup'].strip()),
                         stock_type=row['stock_type'].strip() if row.get('stock_type') else None,
                         in_hand=in_hand or 'N',
-                        in_hand_date=in_hand_date
+                        in_hand_date=in_hand_date,
+                        double_check=row.get('double_check', '').strip().lower() == 'yes',
+                        internal_notes=row.get('internal_notes', '').strip(),
+                        first_scrape_completed=False
                     )
                     
                     db.session.add(event)
@@ -295,7 +297,7 @@ def export_events():
         
         # Write data
         for event in events:
-            city_name = get_city_name_by_id(event.city_id)
+            city_name = get_city_name(event)  # Use the new function
             writer.writerow([
                 event.website,
                 event.event_id,
@@ -310,7 +312,9 @@ def export_events():
                 f"{event.markup:.2f}",
                 event.stock_type or '',
                 event.in_hand or 'N',
-                event.in_hand_date.strftime('%Y-%m-%d') if event.in_hand_date else ''
+                event.in_hand_date.strftime('%Y-%m-%d') if event.in_hand_date else '',
+                'Yes' if event.double_check else 'No',
+                event.internal_notes or ''
             ])
         
         output.seek(0)

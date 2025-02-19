@@ -23,6 +23,8 @@ class EventScraper:
         self.app = current_app._get_current_object()
         self._stop_requested = False
         self._executor = None
+        self._temp_inventory = {}
+        self.double_check_delay = 1200
         
     def request_stop(self):
         """Signal the scraper to stop gracefully"""
@@ -129,45 +131,119 @@ class EventScraper:
             return []
 
         try:
-            # Different handling based on website type
-            if event.website == 'TodayTix':
-                if not event.todaytix_event_id or not event.todaytix_show_id:
-                    logger.error(f"Missing TodayTix IDs for event: {event.event_name}")
-                    return []
-
-                try:
-                    rules = {}
-                    for rule in event.rules:
-                        rules[rule.rule_type] = rule.keyword
-                except Exception as e:
-                    logger.error(f"Error fetching rules for event {event.event_name}: {str(e)}")
-                    rules = {}
-                
-                excluded_seats = VenueMapping.get_excluded_seats(event.event_name, event.venue_name)
-
-                seats_data = self.todaytix_api.get_seats(
-                    int(event.todaytix_show_id), 
-                    int(event.todaytix_event_id), 
-                    rules=rules,
-                    excluded_seats=excluded_seats
-                )
-            else:  # TicketMaster
-                if not event.ticketmaster_id:
-                    logger.error(f"Missing Ticketmaster ID for event: {event.event_name}")
-                    return []
-
-                seats_data = self.ticketmaster_api.get_seats(event.ticketmaster_id)
-
-            if seats_data:
-                logger.info(f"Found {len(seats_data)} valid seats for event: {event.event_name}")
+            if event.website == 'TicketMaster' and event.double_check and not event.first_scrape_completed:
+                return self.process_double_check_event(event)
+            elif event.website == 'TodayTix':
+                # Existing TodayTix logic
+                return self.process_todaytix_event(event)
             else:
-                logger.warning(f"No seats found for event: {event.event_name}")
-
-            return self.process_seats(event, seats_data)
+                # Regular Ticketmaster processing
+                return self.process_ticketmaster_event(event)
 
         except Exception as e:
             logger.error(f"Error processing event {event.event_name}: {str(e)}")
             return []
+
+    def process_double_check_event(self, event: Event) -> List[Dict]:
+        """Handle double-check process for Ticketmaster events."""
+        if not event.ticketmaster_id:
+            logger.error(f"Missing Ticketmaster ID for event: {event.event_name}")
+            return []
+
+        event_key = f"{event.website}_{event.ticketmaster_id}"
+        
+        # First scrape
+        if event_key not in self._temp_inventory:
+            logger.info(f"Performing first scrape for double-check event: {event.event_name}")
+            first_scrape = self.ticketmaster_api.get_seats(event.ticketmaster_id)
+            if not first_scrape:
+                return []
+                
+            self._temp_inventory[event_key] = {
+                'data': first_scrape,
+                'timestamp': time.time(),
+                'processed': False
+            }
+            return []  # Return empty list to continue with other events
+
+        # Check if enough time has passed for second scrape
+        elapsed_time = time.time() - self._temp_inventory[event_key]['timestamp']
+        if elapsed_time < self.double_check_delay:
+            return []  # Not ready for second scrape yet
+
+        if self._temp_inventory[event_key]['processed']:
+            return []  # Already processed this event
+
+        # Perform second scrape and compare
+        logger.info(f"Performing second scrape for double-check event: {event.event_name}")
+        second_scrape = self.ticketmaster_api.get_seats(event.ticketmaster_id)
+        
+        # Compare and keep only matching tickets
+        first_scrape = self._temp_inventory[event_key]['data']
+        stable_tickets = self.compare_scrapes(first_scrape, second_scrape)
+        
+        # Mark event as completed first scrape
+        with self.app.app_context():
+            event.first_scrape_completed = True
+            db.session.commit()
+            
+        # Clean up temporary storage
+        self._temp_inventory[event_key]['processed'] = True
+        
+        # Process the stable tickets
+        return self.process_seats(event, stable_tickets)
+
+    def compare_scrapes(self, first_scrape: List[Dict], second_scrape: List[Dict]) -> List[Dict]:
+        """Compare two scrapes and return only matching tickets."""
+        # Create sets of ticket identifiers for comparison
+        def create_ticket_id(ticket):
+            return f"{ticket['section']}_{ticket['row']}_{ticket['seats']}_{ticket['price']}"
+            
+        first_set = {create_ticket_id(ticket) for ticket in first_scrape}
+        second_set = {create_ticket_id(ticket) for ticket in second_scrape}
+        
+        # Keep only tickets that appear in both scrapes
+        stable_ids = first_set.intersection(second_set)
+        
+        # Return the full ticket data for stable tickets
+        return [
+            ticket for ticket in second_scrape 
+            if create_ticket_id(ticket) in stable_ids
+        ]
+
+    def process_ticketmaster_event(self, event: Event) -> List[Dict]:
+        """Process a regular Ticketmaster event."""
+        if not event.ticketmaster_id:
+            logger.error(f"Missing Ticketmaster ID for event: {event.event_name}")
+            return []
+
+        seats_data = self.ticketmaster_api.get_seats(event.ticketmaster_id)
+        return self.process_seats(event, seats_data)
+
+    def process_todaytix_event(self, event: Event) -> List[Dict]:
+        """Process a TodayTix event."""
+        # Existing TodayTix processing logic
+        if not event.todaytix_event_id or not event.todaytix_show_id:
+            logger.error(f"Missing TodayTix IDs for event: {event.event_name}")
+            return []
+
+        try:
+            rules = {}
+            for rule in event.rules:
+                rules[rule.rule_type] = rule.keyword
+        except Exception as e:
+            logger.error(f"Error fetching rules for event {event.event_name}: {str(e)}")
+            rules = {}
+        
+        excluded_seats = VenueMapping.get_excluded_seats(event.event_name, event.venue_name)
+
+        seats_data = self.todaytix_api.get_seats(
+            int(event.todaytix_show_id), 
+            int(event.todaytix_event_id), 
+            rules=rules,
+            excluded_seats=excluded_seats
+        )
+        return self.process_seats(event, seats_data)
 
     def run(self, job: ScraperJob):
         """Run the scraper with job tracking and concurrent processing."""

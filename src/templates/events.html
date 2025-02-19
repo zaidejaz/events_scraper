@@ -76,6 +76,12 @@
                         In Hand Date
                     </th>
                     <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Double Check
+                    </th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Internal Notes
+                    </th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                         Actions
                     </th>
                 </tr>
@@ -91,7 +97,13 @@
                     <td class="px-6 py-4 whitespace-nowrap">{{ event.website }}</td>
                     <td class="px-6 py-4 whitespace-nowrap">{{ event.event_id }}</td>
                     <td class="px-6 py-4 whitespace-nowrap">{{ event.event_name }}</td>
-                    <td class="px-6 py-4 whitespace-nowrap">{{ event.city_name }}</td>
+                    <td class="px-6 py-4 whitespace-nowrap">
+                        {% if event.custom_city %}
+                        {{ event.custom_city }}
+                        {% else %}
+                        {{ city_names.get(event.city_id, '-') }}
+                        {% endif %}
+                    </td>
                     <td class="px-6 py-4 whitespace-nowrap">{{ event.venue_name or '-' }}</td>
                     <td class="px-6 py-4 whitespace-nowrap">{{ event.event_date }}</td>
                     <td class="px-6 py-4 whitespace-nowrap">{{ event.event_time }}</td>
@@ -102,6 +114,8 @@
                     <td class="px-6 py-4 whitespace-nowrap">{{ event.stock_type or '-' }}</td>
                     <td class="px-6 py-4 whitespace-nowrap">{{ event.in_hand or 'N' }}</td>
                     <td class="px-6 py-4 whitespace-nowrap">{{ event.in_hand_date or '-' }}</td>
+                    <td class="px-6 py-4 whitespace-nowrap">{{ 'Yes' if event.double_check else 'No' }}</td>
+                    <td class="px-6 py-4 whitespace-normal">{{ event.internal_notes or '-' }}</td>
                     <td class="px-6 py-4 whitespace-nowrap space-x-2">
                         <button onclick="editEvent('{{ event.id }}')"
                             class="text-indigo-600 hover:text-indigo-900">Edit</button>
@@ -153,15 +167,18 @@
                         class="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2">
                 </div>
 
-                <div>
+                <div id="cityInputContainer">
                     <label class="block text-sm font-medium text-gray-700">City</label>
-                    <select id="city" name="city_id" required
-                        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2">
+                    <select id="citySelect" name="city_id"
+                        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 todaytix-field">
                         <option value="">Select a city</option>
                         {% for city, city_id in cities.items() %}
                         <option value="{{ city_id }}">{{ city }}</option>
                         {% endfor %}
                     </select>
+                    <input type="text" id="customCity" name="custom_city"
+                        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 ticketmaster-field hidden"
+                        placeholder="Enter city name">
                 </div>
 
                 <div>
@@ -233,6 +250,22 @@
                         class="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2">
                 </div>
 
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">Double Check</label>
+                    <select id="doubleCheck" name="double_check"
+                            class="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2">
+                        <option value="false">No</option>
+                        <option value="true">Yes</option>
+                    </select>
+                </div>
+
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">Internal Notes</label>
+                    <textarea id="internalNotes" name="internal_notes"
+                              class="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2"
+                              rows="3"></textarea>
+                </div>
+
                 <div class="flex justify-end space-x-2">
                     <button type="button" onclick="closeModal()"
                         class="px-4 py-2 bg-gray-200 text-gray-800 rounded hover:bg-gray-300">
@@ -251,25 +284,23 @@
 
     function toggleWebsiteFields() {
         const website = document.getElementById('website').value;
-        const todaytixFields = document.getElementById('todaytixFields');
-        const ticketmasterFields = document.getElementById('ticketmasterFields');
-
-        console.log('Toggling fields for website:', website); // Add logging
+        const todaytixFields = document.querySelectorAll('.todaytix-field');
+        const ticketmasterFields = document.querySelectorAll('.ticketmaster-field');
+        const citySelect = document.getElementById('citySelect');
+        const customCity = document.getElementById('customCity');
 
         if (website === 'TodayTix') {
-            todaytixFields.classList.remove('hidden');
-            ticketmasterFields.classList.add('hidden');
-            // Clear Ticketmaster field
-            const ticketmasterId = document.getElementById('ticketmasterId');
-            if (ticketmasterId) ticketmasterId.value = '';
-        } else if (website === 'TicketMaster') {
-            todaytixFields.classList.add('hidden');
-            ticketmasterFields.classList.remove('hidden');
-            // Clear TodayTix fields
-            const todaytixEventId = document.getElementById('todaytixEventId');
-            const todaytixShowId = document.getElementById('todaytixShowId');
-            if (todaytixEventId) todaytixEventId.value = '';
-            if (todaytixShowId) todaytixShowId.value = '';
+            todaytixFields.forEach(field => field.classList.remove('hidden'));
+            ticketmasterFields.forEach(field => field.classList.add('hidden'));
+            citySelect.required = true;
+            customCity.required = false;
+            customCity.value = '';
+        } else {
+            todaytixFields.forEach(field => field.classList.add('hidden'));
+            ticketmasterFields.forEach(field => field.classList.remove('hidden'));
+            citySelect.required = false;
+            customCity.required = true;
+            citySelect.value = '';
         }
     }
 
@@ -304,6 +335,8 @@
             document.getElementById('stockType').value = event.stock_type || '';
             document.getElementById('inHand').value = event.in_hand || 'N';
             document.getElementById('inHandDate').value = event.in_hand_date || '';
+            document.getElementById('doubleCheck').value = event.double_check.toString();
+            document.getElementById('internalNotes').value = event.internal_notes || '';
 
             // Handle website-specific fields
             if (event.website === 'TodayTix') {
@@ -331,20 +364,29 @@
         const method = id ? 'PUT' : 'POST';
         const url = id ? `/api/events/${id}` : '/api/events';
 
-        // Build the request body based on website type
         const requestData = {
             website: website,
             event_id: formData.get('event_id'),
             event_name: formData.get('event_name'),
-            city_id: parseInt(formData.get('city_id')),
             event_date: formData.get('event_date'),
             event_time: formData.get('event_time'),
             venue_name: formData.get('venue_name') || null,
             markup: parseFloat(formData.get('markup')),
             stock_type: formData.get('stock_type') || null,
             in_hand: formData.get('in_hand') || 'N',
-            in_hand_date: formData.get('in_hand_date') || null
+            in_hand_date: formData.get('in_hand_date') || null,
+            double_check: formData.get('double_check') === 'true',
+            internal_notes: formData.get('internal_notes')
         };
+
+        // Handle city data based on website
+        if (website === 'TodayTix') {
+            requestData.city_id = parseInt(formData.get('city_id'));
+            requestData.custom_city = null;
+        } else {
+            requestData.city_id = null;
+            requestData.custom_city = formData.get('custom_city');
+        }
 
         // Add website-specific fields
         if (website === 'TodayTix') {
@@ -357,19 +399,23 @@
             requestData.todaytix_show_id = null;
         }
 
-        const response = await fetch(url, {
-            method,
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify(requestData)
-        });
+        try {
+            const response = await fetch(url, {
+                method,
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(requestData)
+            });
 
-        if (response.ok) {
-            location.reload();
-        } else {
-            const error = await response.json();
-            alert('Error saving event: ' + (error.error || 'Unknown error'));
+            if (response.ok) {
+                location.reload();
+            } else {
+                const error = await response.json();
+                alert('Error saving event: ' + (error.error || 'Unknown error'));
+            }
+        } catch (error) {
+            alert('Error saving event: ' + error.message);
         }
     });
 

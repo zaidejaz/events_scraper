@@ -3,9 +3,12 @@ from flask import Blueprint, jsonify, render_template, request, current_app
 from flask_login import login_required
 import csv
 from io import StringIO
+
+from src.city_utils import CityMapper
 from ..ticketmaster.api import TicketmasterAPI
 
 bp = Blueprint('ticketmaster_events', __name__)
+city_mapper = CityMapper()
 
 @bp.route('/ticketmaster-events')
 @login_required
@@ -19,6 +22,10 @@ def search_events():
         data = request.json
         event_name = data.get('event_name')
         city = data.get('city')
+        
+        # Add city if it's new
+        if not city_mapper.is_valid_city(city):
+            city_mapper.add_custom_city(city)
         start_date = datetime.strptime(data.get('start_date'), '%Y-%m-%d').date()
         end_date = datetime.strptime(data.get('end_date'), '%Y-%m-%d').date()
 
