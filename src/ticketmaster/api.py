@@ -32,7 +32,7 @@ class TicketmasterAPI:
             'Sec-Fetch-Site': 'same-site',
             'Pragma': 'no-cache',
             'Cache-Control': 'no-cache',
-            'TE': 'trailers'
+            'TE': 'trailers',
             'Cookie': 'eps_sid=4daa335f884baac772942a5a2fd8af578054442e; LANGUAGE=en-us; BID=KHniJk5QYFjj4jW9OrBCRgZHMHra6XKGcPcL-PYq7OHfCuPTYWuTLcRDVdLBIjV_zf_X7R_KahANbx3Q; TMUO=east_sfm2BBCbFA38g97mQsBUmgSjqiO6URCbBG7+0pOpDz0=; SID=SRiFKhpmqY-1KACmt0Md6tISWwhIMCUpl8YSJnEae_SqFIjtBaFe1U3DvkATK-tAot0ZyRiCNlIuKzyFOZdT; tmpt=0:7776c4ae0e000000:1738740211:30a2956c:258cf3f342a155d321090f8804f60f75:cb7ab7fd201ca5b07785ebdff08a1e6be8b54bdd186f9849530e6e00f069ff00',
         }
 
@@ -104,7 +104,8 @@ class TicketmasterAPI:
                         event_url = event.get('url', '')
                         if event_url:
                             # Try to extract ID from the end of the URL
-                            id_match = re.search(r'/event/([A-Z0-9]+)(?:\?|$)', event_url)
+                            id_match = re.search(r'/event/([A-Za-z0-9]+)(?:\?|$)', event_url)
+                            logger.info(id_match)
                             if id_match:
                                 ticketmaster_id = id_match.group(1)
 
