@@ -1,0 +1,126 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="max-w-7xl mx-auto px-4 py-8">
+    <div class="flex justify-between items-center mb-6">
+        <h1 class="text-2xl font-bold text-gray-800">Rule Mappings</h1>
+        <a href="{{ url_for('rules.new_mapping') }}" 
+           class="bg-indigo-500 text-white px-4 py-2 rounded hover:bg-indigo-600">
+            Add Rule Mapping
+        </a>
+    </div>
+
+    {% if events %}
+        {# Create a dictionary to track unique combinations #}
+        {% set seen = {} %}
+        {% for event in events %}
+            {% set key = (event.event_name, event.city_id, event.venue_name)|string %}
+            {% if key not in seen %}
+                {% set _ = seen.update({key: event}) %}
+                <div class="bg-white rounded-lg shadow-lg p-6 mb-6">
+                    <div class="flex justify-between items-start mb-4">
+                        <div>
+                            <h2 class="text-xl font-semibold">{{ event.event_name }}</h2>
+                            <p class="text-gray-600">
+                                {{ cities[event.city_id] }} | 
+                                {{ event.venue_name or 'No Venue' }}
+                            </p>
+                        </div>
+                        <button onclick="showCopyRulesModal('{{ event.id }}')"
+                                class="text-blue-600 hover:text-blue-800">
+                            Copy Rules
+                        </button>
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        {% for rule_type in rule_types %}
+                            <div class="border rounded p-4">
+                                <h3 class="font-medium mb-2">{{ rule_type|title }}</h3>
+                                {% set found = false %}
+                                {% for rule in event.rules %}
+                                    {% if rule.rule_type == rule_type %}
+                                        {% set found = true %}
+                                        <div class="flex justify-between items-center">
+                                            <span>{{ rule.keyword }}</span>
+                                            <form action="{{ url_for('rules.delete_mapping', id=rule.id) }}"
+                                                  method="POST" class="inline">
+                                                <button type="submit" 
+                                                        class="text-red-600 hover:text-red-900"
+                                                        onclick="return confirm('Delete this rule?')">
+                                                    Delete
+                                                </button>
+                                            </form>
+                                        </div>
+                                    {% endif %}
+                                {% endfor %}
+                                {% if not found %}
+                                    <p class="text-gray-500">No rule set</p>
+                                {% endif %}
+                            </div>
+                        {% endfor %}
+                    </div>
+                </div>
+            {% endif %}
+        {% endfor %}
+    {% else %}
+        <p class="text-center text-gray-500 py-8">No events found</p>
+    {% endif %}
+</div>
+
+<!-- Copy Rules Modal -->
+<div id="copyRulesModal" class="hidden fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full">
+    <div class="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white">
+        <h3 class="text-lg font-medium mb-4">Copy Rules To Event</h3>
+        <form action="{{ url_for('rules.copy_rules') }}" method="POST">
+            <input type="hidden" id="sourceEventId" name="source_event_id">
+            
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">Event Name</label>
+                    <input type="text" name="target_event_name" required
+                           class="mt-1 block w-full rounded-md border-gray-300 shadow-sm">
+                </div>
+
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">City</label>
+                    <select name="target_city_id" required
+                            class="mt-1 block w-full rounded-md border-gray-300 shadow-sm">
+                        <option value="">Select a city</option>
+                        {% for city, city_id in cities.items() %}
+                        <option value="{{ city_id }}">{{ city }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">Venue (Optional)</label>
+                    <input type="text" name="target_venue"
+                           class="mt-1 block w-full rounded-md border-gray-300 shadow-sm">
+                </div>
+            </div>
+
+            <div class="mt-6 flex justify-end space-x-2">
+                <button type="button" onclick="closeCopyModal()"
+                        class="px-4 py-2 bg-gray-200 text-gray-800 rounded hover:bg-gray-300">
+                    Cancel
+                </button>
+                <button type="submit"
+                        class="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600">
+                    Copy Rules
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+function showCopyRulesModal(eventId) {
+    document.getElementById('sourceEventId').value = eventId;
+    document.getElementById('copyRulesModal').classList.remove('hidden');
+}
+
+function closeCopyModal() {
+    document.getElementById('copyRulesModal').classList.add('hidden');
+}
+</script>
+{% endblock %}

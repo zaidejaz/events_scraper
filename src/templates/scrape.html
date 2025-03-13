@@ -1,0 +1,307 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="max-w-7xl mx-auto">
+    <div class="bg-white rounded-lg shadow p-6">
+        <h1 class="text-2xl font-bold text-gray-800 mb-4">Scraper Control</h1>
+
+        <!-- Status Display -->
+        <div class="mb-6 p-4 bg-gray-50 rounded-lg">
+            <h2 class="text-lg font-semibold mb-2">Scraper Status</h2>
+            <div id="statusDisplay" class="space-y-2">
+                <p>Status: <span id="statusText" class="font-medium">{{ current_job.status if current_job else 'Not Running' }}</span></p>
+                <p>Current Interval: <span id="currentIntervalText" class="font-medium">{{ current_job.interval_minutes}} minutes</span></p>
+                <p>Concurrent Requests: <span id="concurrentRequestsText" class="font-medium">{{ current_job.concurrent_requests if current_job else '5' }}</span></p>
+                <p>Auto Upload: <span id="autoUploadText" class="font-medium">{{ 'Yes' if current_job and current_job.auto_upload else 'No' }}</span></p>
+                <p>Last Run: <span id="lastRunText" class="font-medium">{{ current_job.last_run if current_job else 'Never' }}</span></p>
+                <p>Next Run: <span id="nextRunText" class="font-medium">{{ current_job.next_run if current_job else 'Not Scheduled' }}</span></p>
+                <p>Events Processed: <span id="eventsProcessedText" class="font-medium">{{ current_job.events_processed if current_job else '0' }}</span></p>
+                <p>Tickets Found: <span id="ticketsFoundText" class="font-medium">{{ current_job.total_tickets_found if current_job else '0' }}</span></p>
+            </div>
+        </div>
+
+        <!-- Controls -->
+        <div class="mb-6 space-y-4">
+            <div>
+                <label class="block text-sm font-medium text-gray-700">Scrape Interval (minutes)</label>
+                <div class="mt-1 flex items-center space-x-2">
+                    <input type="number" id="intervalMinutes" min="1" value="{{ current_job.interval_minutes if current_job else '20' }}"
+                        class="rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50 p-2"
+                        {% if current_job and current_job.status=='running' %}disabled{% endif %}>
+                </div>
+            </div>
+
+            <div>
+                <label class="block text-sm font-medium text-gray-700">Concurrent Requests</label>
+                <div class="mt-1 flex items-center space-x-2">
+                    <input type="number" id="concurrentRequests" min="1" max="20" 
+                        value="{{ current_job.concurrent_requests if current_job else '5' }}"
+                        class="rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50 p-2"
+                        {% if current_job and current_job.status=='running' %}disabled{% endif %}>
+                    <span class="text-sm text-gray-500">(1-20)</span>
+                </div>
+            </div>
+
+            <div>
+                <label class="flex items-center space-x-2">
+                    <input type="checkbox" id="autoUpload" checked 
+                        class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                        {% if current_job and current_job.auto_upload %}checked{% endif %}
+                        {% if current_job and current_job.status=='running' %}disabled{% endif %}>
+                    <span class="text-sm font-medium text-gray-700">Auto Upload Results to API</span>
+                </label>
+            </div>
+        </div>
+
+        <div class="flex items-center justify-between">
+            <button id="startButton" onclick="startScraper()"
+                class="bg-blue-500 text-white px-6 py-2 rounded hover:bg-blue-600"
+                style="display: '{{ 'none' if current_job and current_job.status in ['running', 'completed'] else 'inline-block' }}';">
+                Start Scraper
+            </button>
+            <button id="stopButton" onclick="stopScraper()"
+                class="bg-red-500 text-white px-6 py-2 rounded hover:bg-red-600"
+                style="display: '{{ 'inline-block' if current_job and current_job.status in ['running', 'completed'] else 'none' }}';">
+                Stop Scraper
+            </button>
+        </div>
+
+        <div class="mt-8">
+            <h2 class="text-xl font-bold mb-4">Output Files</h2>
+            <div class="bg-white rounded-lg shadow overflow-x-auto">
+                <table class="min-w-full" id="filesTable">
+                    <thead class="bg-gray-50">
+                        <tr>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Filename</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Created At</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Size</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Time Left</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Action</th>
+                        </tr>
+                    </thead>
+                    <tbody class="bg-white divide-y divide-gray-200">
+                        <!-- Files will be populated here -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    let statusCheckInterval;
+
+    async function startScraper() {
+        const intervalMinutes = parseInt(document.getElementById('intervalMinutes').value);
+        const concurrentRequests = parseInt(document.getElementById('concurrentRequests').value);
+        const autoUpload = document.getElementById('autoUpload').checked;
+
+        if (intervalMinutes < 1) {
+            alert('Interval must be at least 1 minute');
+            return;
+        }
+
+        if (concurrentRequests < 1 || concurrentRequests > 20) {
+            alert('Concurrent requests must be between 1 and 20');
+            return;
+        }
+
+        try {
+            const startButton = document.getElementById('startButton');
+            const stopButton = document.getElementById('stopButton');
+            const controls = document.querySelectorAll('input');
+
+            startButton.disabled = true;
+            startButton.classList.add('opacity-50');
+            startButton.style.display = 'none';
+            stopButton.style.display = 'inline-block';
+            controls.forEach(control => control.disabled = true);
+
+            const response = await fetch('/api/scrape/start', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ 
+                    interval_minutes: intervalMinutes,
+                    concurrent_requests: concurrentRequests,
+                    auto_upload: autoUpload
+                })
+            });
+
+            if (!response.ok) {
+                const data = await response.json();
+                throw new Error(data.message || 'Failed to start scraper');
+            }
+
+            startStatusChecks();
+            await checkStatus();
+        } catch (error) {
+            showError(error.message);
+            resetControls();
+        }
+    }
+
+    function resetControls() {
+        const startButton = document.getElementById('startButton');
+        const stopButton = document.getElementById('stopButton');
+        const controls = document.querySelectorAll('input');
+
+        startButton.disabled = false;
+        startButton.classList.remove('opacity-50');
+        startButton.style.display = 'inline-block';
+        stopButton.style.display = 'none';
+        controls.forEach(control => control.disabled = false);
+    }
+
+    async function stopScraper() {
+        try {
+            const stopButton = document.getElementById('stopButton');
+            stopButton.disabled = true;
+            stopButton.classList.add('opacity-50');
+
+            const response = await fetch('/api/scrape/stop', { method: 'POST' });
+
+            if (!response.ok) {
+                const data = await response.json();
+                throw new Error(data.message || 'Failed to stop scraper');
+            }
+
+            stopStatusChecks();
+            await checkStatus();
+            resetControls();
+        } catch (error) {
+            showError(error.message);
+        } finally {
+            const stopButton = document.getElementById('stopButton');
+            stopButton.disabled = false;
+            stopButton.classList.remove('opacity-50');
+        }
+    }
+
+    async function checkStatus() {
+        try {
+            const response = await fetch('/api/scrape/status');
+            if (!response.ok) throw new Error('Failed to fetch status');
+            const data = await response.json();
+
+            document.getElementById('statusText').textContent = data.status;
+            document.getElementById('currentIntervalText').textContent = `${data.interval_minutes} minutes`;
+            document.getElementById('concurrentRequestsText').textContent = data.concurrent_requests;
+            document.getElementById('autoUploadText').textContent = data.auto_upload ? 'Yes' : 'No';
+            document.getElementById('eventsProcessedText').textContent = data.events_processed || '0';
+            document.getElementById('ticketsFoundText').textContent = data.total_tickets_found || '0';
+            document.getElementById('lastRunText').textContent = data.last_run ? new Date(data.last_run).toLocaleString() : 'Never';
+            document.getElementById('nextRunText').textContent = data.next_run ? new Date(data.next_run).toLocaleString() : 'Not Scheduled';
+
+            const startButton = document.getElementById('startButton');
+            const stopButton = document.getElementById('stopButton');
+            const controls = document.querySelectorAll('input');
+
+            if (data.status === 'running' || data.status === 'completed') {
+                startButton.style.display = 'none';
+                stopButton.style.display = 'inline-block';
+                controls.forEach(control => control.disabled = true);
+            } else {
+                startButton.style.display = 'inline-block';
+                stopButton.style.display = 'none';
+                controls.forEach(control => control.disabled = false);
+            }
+
+            if (data.status === 'error') {
+                stopStatusChecks();
+                await updateFilesList();
+                resetControls();
+            }
+        } catch (error) {
+            console.error('Error checking status:', error);
+        }
+    }
+
+    function startStatusChecks() {
+        if (statusCheckInterval) clearInterval(statusCheckInterval);
+        statusCheckInterval = setInterval(checkStatus, 2000);
+    }
+
+    function stopStatusChecks() {
+        if (statusCheckInterval) {
+            clearInterval(statusCheckInterval);
+            statusCheckInterval = null;
+        }
+    }
+
+    function showError(message) {
+        let errorDiv = document.getElementById('errorMessage');
+        if (!errorDiv) {
+            errorDiv = document.createElement('div');
+            errorDiv.id = 'errorMessage';
+            document.getElementById('statusDisplay').insertAdjacentElement('afterend', errorDiv);
+        }
+
+        errorDiv.innerHTML = `
+            <div class="mt-4 bg-red-100 border-l-4 border-red-500 text-red-700 p-4">
+                Error: ${message}
+            </div>
+        `;
+
+        setTimeout(() => errorDiv.innerHTML = '', 5000);
+    }
+
+    // Files handling functions remain the same
+    function formatFileSize(bytes) {
+        if (bytes === 0) return '0 Bytes';
+        const k = 1024;
+        const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+        const i = Math.floor(Math.log(bytes) / Math.log(k));
+        return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+    }
+
+    function formatTimeLeft(ageHours) {
+        const hoursLeft = 24 - ageHours;
+        if (hoursLeft <= 0) return 'Expired';
+        return `${Math.floor(hoursLeft)} hours ${Math.round((hoursLeft % 1) * 60)} minutes`;
+    }
+
+    async function downloadFile(filename) {
+        window.location.href = `/api/files/${encodeURIComponent(filename)}`;
+    }
+
+    async function updateFilesList() {
+        try {
+            const response = await fetch('/api/files');
+            const data = await response.json();
+
+            if (data.status === 'success') {
+                const tbody = document.querySelector('#filesTable tbody');
+                tbody.innerHTML = data.files.length === 0
+                    ? '<tr><td colspan="5" class="px-6 py-4 text-center text-gray-500">No output files available</td></tr>'
+                    : data.files.map(file => `
+                        <tr>
+                            <td class="px-6 py-4 whitespace-nowrap">${file.name}</td>
+                            <td class="px-6 py-4 whitespace-nowrap">${new Date(file.created_at).toLocaleString()}</td>
+                            <td class="px-6 py-4 whitespace-nowrap">${formatFileSize(file.size)}</td>
+                            <td class="px-6 py-4 whitespace-nowrap">${formatTimeLeft(file.age_hours)}</td>
+                            <td class="px-6 py-4 whitespace-nowrap">
+                                <button onclick="downloadFile('${file.name}')" class="text-indigo-600 hover:text-indigo-900">Download</button>
+                            </td>
+                        </tr>
+                    `).join('');
+            }
+        } catch (error) {
+            console.error('Error updating files list:', error);
+        }
+    }
+
+    // Initialization
+    document.addEventListener('DOMContentLoaded', async function () {
+        const currentStatus = '{{ current_job.status if current_job else "stopped" }}';
+
+        if (currentStatus === 'running') {
+            startStatusChecks();
+        }
+
+        await checkStatus();
+        await updateFilesList();
+
+        setInterval(updateFilesList, 60000);
+    });
+</script>
+{% endblock %}

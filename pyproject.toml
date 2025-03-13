@@ -1,0 +1,27 @@
+[tool.poetry]
+name = "events-scraper"
+version = "0.1.0"
+description = ""
+authors = ["zaidejaz <zaidejaz521@gmail.com>"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.12"
+pandas = "^2.2.3"
+selenium = "^4.27.1"
+webdriver-manager = "^4.0.2"
+schedule = "^1.2.2"
+openpyxl = "^3.1.5"
+websockets = "^14.2"
+playwright = "^1.49.1"
+flask = "^3.1.0"
+flask-sqlalchemy = "^3.1.1"
+flask-apscheduler = "^1.13.1"
+aiohttp = "^3.11.11"
+flask-login = "^0.6.3"
+chardet = "^5.2.0"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"

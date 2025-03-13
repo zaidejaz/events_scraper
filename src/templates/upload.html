@@ -1,0 +1,107 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="max-w-4xl mx-auto">
+    <div class="bg-white rounded-lg shadow p-6">
+        <h1 class="text-2xl font-bold text-gray-800 mb-4">Manual Upload</h1>
+        
+        <form id="uploadForm" class="space-y-4">
+            <div>
+                <label class="block text-sm font-medium text-gray-700">Select File to Upload</label>
+                <input type="file" 
+                       accept=".csv,.xlsx,.xls"
+                       id="csvFile"
+                       class="mt-1 block w-full text-sm text-gray-500
+                              file:mr-4 file:py-2 file:px-4
+                              file:rounded-md file:border-0
+                              file:text-sm file:font-semibold
+                              file:bg-blue-50 file:text-blue-700
+                              hover:file:bg-blue-100"/>
+                <p class="mt-1 text-sm text-gray-500">
+                    Accepted formats: .csv, .xlsx, .xls
+                </p>
+            </div>
+            
+            <div>
+                <label class="block text-sm font-medium text-gray-700">Send Empty CSV</label>
+                <input type="checkbox" id="emptyCsvToggle" class="mt-1">
+            </div>
+            
+            <div>
+                <button type="submit"
+                        class="bg-blue-500 text-white px-6 py-2 rounded hover:bg-blue-600"
+                        id="uploadButton">
+                    Upload File
+                </button>
+            </div>
+        </form>
+        
+        <div id="uploadResult" class="mt-4"></div>
+    </div>
+</div>
+
+<script>
+document.getElementById('uploadForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    
+    const button = document.getElementById('uploadButton');
+    const result = document.getElementById('uploadResult');
+    const fileInput = document.getElementById('csvFile');
+    const emptyCsvToggle = document.getElementById('emptyCsvToggle');
+    
+    button.disabled = true;
+    
+    try {
+        let formData = new FormData();
+        
+        if (emptyCsvToggle.checked) {
+            // Create an empty CSV file
+            const emptyCsv = new Blob([''], { type: 'text/csv' });
+            formData.append('file', emptyCsv, 'empty.csv');
+        } else {
+            const file = fileInput.files[0];
+            if (!file) {
+                result.innerHTML = `
+                    <div class="bg-red-100 border-l-4 border-red-500 text-red-700 p-4">
+                        Please select a file to upload
+                    </div>
+                `;
+                button.disabled = false;
+                return;
+            }
+            formData.append('file', file);
+        }
+        
+        const response = await fetch('/api/upload', {
+            method: 'POST',
+            body: formData
+        });
+        
+        const data = await response.json();
+        
+        if (response.ok) {
+            result.innerHTML = `
+                <div class="bg-green-100 border-l-4 border-green-500 text-green-700 p-4">
+                    ${data.message}
+                </div>
+            `;
+            document.getElementById('uploadForm').reset();
+        } else {
+            result.innerHTML = `
+                <div class="bg-red-100 border-l-4 border-red-500 text-red-700 p-4">
+                    Error: ${data.message}
+                </div>
+            `;
+        }
+    } catch (error) {
+        result.innerHTML = `
+            <div class="bg-red-100 border-l-4 border-red-500 text-red-700 p-4">
+                Error: ${error.message}
+            </div>
+        `;
+    } finally {
+        button.disabled = false;
+    }
+});
+</script>
+{% endblock %}
