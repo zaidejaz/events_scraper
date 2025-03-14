@@ -1,6 +1,6 @@
 from datetime import datetime
 from io import StringIO
-from flask import Blueprint, jsonify, redirect, request, render_template, current_app, url_for
+from flask import Blueprint, jsonify, redirect, request, render_template, current_app, url_for, make_response
 from flask_login import login_required
 from werkzeug.utils import secure_filename
 import csv
@@ -153,25 +153,36 @@ def delete_event(id):
 @bp.route('/api/events/template', methods=['GET'])
 @login_required
 def download_template():
-    csv.writer.writerow([
+    # Create a string buffer to write CSV data
+    si = StringIO()
+    writer = csv.writer(si)
+    
+    # Write headers
+    writer.writerow([
         'website', 'event_id', 'event_name', 'city',
         'event_date', 'event_time', 'todaytix_event_id',
         'todaytix_show_id', 'ticketmaster_id', 'venue_name', 'markup',
         'stock_type', 'in_hand', 'in_hand_date', 'double_check', 'internal_notes'
     ])
     
-    # Update sample rows
-    csv.writer.writerow([
+    # Write sample rows
+    writer.writerow([
         'TodayTix', 'EVT_001', 'Sample Event', 'New York',
         '2024-01-01', '19:30', '123456', '789', '', 'Sample Theater', '1.6',
         'ELECTRONIC', 'N', '2025-02-12', 'No', 'Sample notes'
     ])
     
-    csv.writer.writerow([
+    writer.writerow([
         'TicketMaster', 'EVT_002', 'Sample Event 2', 'New York',
         '2024-01-01', '19:30', '', '', 'TM123456', 'Sample Theater', '1.6',
         'ELECTRONIC', 'N', '2025-02-12', 'Yes', 'Double check needed'
     ])
+    
+    # Create the response
+    output = make_response(si.getvalue())
+    output.headers["Content-Disposition"] = "attachment; filename=events_template.csv"
+    output.headers["Content-type"] = "text/csv"
+    return output
 
 
 @bp.route('/api/events/import', methods=['POST'])

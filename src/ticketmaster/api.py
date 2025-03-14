@@ -1,10 +1,12 @@
-from datetime import datetime
 import os
 import re
 import requests
 import logging
 import uuid
-from typing import Dict, List, Optional
+import random
+from typing import Dict, List
+from datetime import datetime
+from ..services.header_service import HeaderService
 
 logger = logging.getLogger(__name__)
 
@@ -15,43 +17,100 @@ class TicketmasterAPI:
         self.api_key = os.getenv('TICKETMASTER_API_KEY')
         self.api_secret = os.getenv('TICKETMASTER_API_SECRET')
         self.consumer_api = os.getenv('TICKETMASTER_CONSUMER_API')
-        if not all([self.api_key, self.api_secret]):
-            raise ValueError("Missing Ticketmaster API configuration in environment")
-
-        self.headers = {
-            'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64; rv:133.0) Gecko/20100101 Firefox/133.0',
-            'Accept': '*/*',
-            'Accept-Language': 'en-US,en;q=0.5',
-            'Accept-Encoding': 'gzip, deflate, br, zstd',
-            'TMPS-Correlation-Id': str(uuid.uuid4()), 
-            'Origin': 'https://www.ticketmaster.com',
-            'Connection': 'keep-alive',
-            'Referer': 'https://www.ticketmaster.com/',
-            'Sec-Fetch-Dest': 'empty',
-            'Sec-Fetch-Mode': 'cors',
-            'Sec-Fetch-Site': 'same-site',
-            'Pragma': 'no-cache',
-            'Cache-Control': 'no-cache',
-            'TE': 'trailers'
-        }
-
+        self.headers_list = []
+        self.header_service = HeaderService()
+        
+        # Load headers from database at initialization
+        self._load_headers()
+        
+    def _load_headers(self):
+        """Load headers from database"""
+        try:
+            self.headers_list = self.header_service.get_all_active_headers()
+            logger.info(f"Loaded {len(self.headers_list)} headers")
+        except Exception as e:
+            logger.error(f"Error loading headers: {str(e)}")
+            self.headers_list = []
+        
+    def _get_header(self):
+        """Get a header to use for the request"""
+        if not self.headers_list or len(self.headers_list) == 0:
+            self._load_headers()
+            
+        if not self.headers_list or len(self.headers_list) == 0:
+            # Fallback to default headers
+            return {
+                'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64; rv:133.0) Gecko/20100101 Firefox/133.0',
+                'Accept': '*/*',
+                'Accept-Language': 'en-US,en;q=0.5',
+                'Accept-Encoding': 'gzip, deflate, br, zstd',
+                'TMPS-Correlation-Id': str(uuid.uuid4()), 
+                'Origin': 'https://www.ticketmaster.com',
+                'Connection': 'keep-alive',
+                'Referer': 'https://www.ticketmaster.com/',
+                'Sec-Fetch-Dest': 'empty',
+                'Sec-Fetch-Mode': 'cors',
+                'Sec-Fetch-Site': 'same-site',
+                'Pragma': 'no-cache',
+                'Cache-Control': 'no-cache',
+            }
+            
+        # Choose a random header from the list
+        header = random.choice(self.headers_list)
+        
+        # Mark as used in database
+        self._mark_header_used(header)
+        
+        # Add correlation ID
+        header['TMPS-Correlation-Id'] = str(uuid.uuid4())
+        
+        return header
+        
+    def _mark_header_used(self, header):
+        """Mark the header as used in the database"""
+        try:
+            # Find the header by cookie
+            cookie = header.get('Cookie', '')
+            if not cookie:
+                return
+                
+            from ..models.database import TicketmasterHeader
+            db_header = TicketmasterHeader.query.filter(
+                TicketmasterHeader.headers.like(f'%{cookie}%')
+            ).first()
+            
+            if db_header:
+                db_header.mark_used()
+        except Exception as e:
+            logger.error(f"Error marking header as used: {str(e)}")
+            
+    def _mark_header_failure(self, header):
+        """Mark the header as failed in the database"""
+        try:
+            # Find the header by cookie
+            cookie = header.get('Cookie', '')
+            if not cookie:
+                return
+                
+            from ..models.database import TicketmasterHeader
+            db_header = TicketmasterHeader.query.filter(
+                TicketmasterHeader.headers.like(f'%{cookie}%')
+            ).first()
+            
+            if db_header:
+                db_header.mark_failure()
+                # Remove from current list
+                if header in self.headers_list:
+                    self.headers_list.remove(header)
+        except Exception as e:
+            logger.error(f"Error marking header as failed: {str(e)}")
+            
     def search_events(self, event_name: str, location: str, start_date: str, end_date: str) -> List[Dict]:
-        """
-        Search for events using the Ticketmaster Discovery API.
-
-        Args:
-            event_name (str): Name/keyword of the event to search for
-            location (str): City name
-            start_date (str): Start date in YYYY-MM-DD format  
-            end_date (str): End date in YYYY-MM-DD format
-
-        Returns:
-            List[Dict]: List of matching events with relevant details
-        """
         try:
             base_url = 'https://app.ticketmaster.com/discovery/v2/events'
             processed_events = []
             page = 0
+            max_retries = 3
 
             # Convert input dates to datetime objects for comparison
             start_datetime = datetime.strptime(start_date, '%Y-%m-%d')
@@ -61,21 +120,47 @@ class TicketmasterAPI:
             normalized_event_name = event_name.lower().strip()
 
             while True:
-                query_params = {
-                    'apikey': self.consumer_api,
-                    'keyword': event_name,
-                    'locale': '*',
-                    'city': location,
-                    'size': 200,
-                    'page': page
-                }
+                retry_count = 0
+                success = False
+                response = None
+                
+                while retry_count < max_retries and not success:
+                    # Get a header for this request
+                    headers = self._get_header()
+                    
+                    query_params = {
+                        'apikey': self.consumer_api,
+                        'keyword': event_name,
+                        'locale': '*',
+                        'city': location,
+                        'size': 200,
+                        'page': page
+                    }
 
-                response = requests.get(
-                    base_url,
-                    params=query_params,
-                    headers=self.headers
-                )
-                response.raise_for_status()
+                    try:
+                        response = requests.get(
+                            base_url,
+                            params=query_params,
+                            headers=headers,
+                            timeout=30
+                        )
+                        
+                        if response.status_code == 200:
+                            success = True
+                        else:
+                            self._mark_header_failure(headers)
+                            retry_count += 1
+                            logger.warning(f"Request failed with status {response.status_code}, retrying ({retry_count}/{max_retries})")
+                    except Exception as e:
+                        logger.error(f"Request error: {str(e)}")
+                        self._mark_header_failure(headers)
+                        retry_count += 1
+                
+                if not success:
+                    logger.error("Failed to get events after multiple retries")
+                    break
+                    
+                # Process the response data
                 data = response.json()
 
                 if '_embedded' not in data or 'events' not in data['_embedded']:
@@ -137,10 +222,11 @@ class TicketmasterAPI:
 
             return processed_events
 
-        except requests.RequestException as e:
+        except Exception as e:
             logger.error(f"Error searching events: {str(e)}")
-            if 'response' in locals() and hasattr(response, 'text'):
+            if 'response' in locals() and response and hasattr(response, 'text'):
                 logger.error(f"Response content: {response.text}")
+                
             return []
 
     def get_seats(self, event_id: str) -> List[Dict]:
@@ -148,11 +234,12 @@ class TicketmasterAPI:
         seats_data = []
         offset = 0
         limit = 40
+        max_retries = 3
 
         while True:
             try:
                 base_url = f'{self.BASE_URL}/event/{event_id}/quickpicks'
-                
+
                 # Query parameters
                 query_params = (
                     f'show=places+sections'
@@ -174,8 +261,33 @@ class TicketmasterAPI:
 
                 url = f"{base_url}?{query_params}"
 
-                response = requests.get(url, headers=self.headers)
-                response.raise_for_status()
+                # Use retry logic just like in search_events
+                retry_count = 0
+                success = False
+                response = None
+
+                while retry_count < max_retries and not success:
+                    # Get a header for this request
+                    headers = self._get_header()
+                    print(headers)
+                    try:
+                        response = requests.get(url, headers=headers, timeout=30)
+
+                        if response.status_code == 200:
+                            success = True
+                        else:
+                            self._mark_header_failure(headers)
+                            retry_count += 1
+                            logger.warning(f"Request failed with status {response.status_code}, retrying ({retry_count}/{max_retries})")
+                    except Exception as e:
+                        logger.error(f"Request error: {str(e)}")
+                        self._mark_header_failure(headers)
+                        retry_count += 1
+
+                if not success:
+                    logger.error(f"Failed to get seats for event {event_id} after multiple retries")
+                    break
+
                 data = response.json()
 
                 if not data.get('picks'):
@@ -191,7 +303,7 @@ class TicketmasterAPI:
 
             except Exception as e:
                 logger.error(f"Error fetching seats for event {event_id}: {str(e)}")
-                if 'response' in locals() and hasattr(response, 'text'):
+                if 'response' in locals() and response and hasattr(response, 'text'):
                     logger.error(f"Response content: {response.text}")
                 break
 

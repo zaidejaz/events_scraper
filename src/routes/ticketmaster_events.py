@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 from flask import Blueprint, jsonify, render_template, request, current_app
 from flask_login import login_required
 import csv
@@ -84,4 +84,66 @@ def search_events():
         return jsonify({
             'status': 'error',
             'message': str(e)
+        }), 500
+    
+@bp.route('/api/ticketmaster/headers/refresh', methods=['POST'])
+@login_required
+def refresh_headers():
+    """Manually refresh Ticketmaster headers"""
+    try:
+        count = request.json.get('count', 5)
+        
+        from ..services.header_service import HeaderService
+        service = HeaderService()
+        
+        headers = []
+        for _ in range(count):
+            header = service.fetch_new_header()
+            if header:
+                headers.append(header)
+        
+        return jsonify({
+            'success': True,
+            'count': len(headers),
+            'message': f'Successfully added {len(headers)} new headers'
+        })
+    except Exception as e:
+        current_app.logger.error(f"Error refreshing headers: {str(e)}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+@bp.route('/api/ticketmaster/headers/status', methods=['GET'])
+@login_required
+def get_header_status():
+    """Get status of Ticketmaster headers"""
+    try:
+        from ..models.database import TicketmasterHeader
+        
+        total = TicketmasterHeader.query.count()
+        
+        expiry_time = datetime.now() - timedelta(hours=24)
+        active = TicketmasterHeader.query.filter(
+            TicketmasterHeader.is_active == True,
+            TicketmasterHeader.created_at > expiry_time
+        ).count()
+        
+        failed = TicketmasterHeader.query.filter(
+            TicketmasterHeader.failures > 0
+        ).count()
+        
+        return jsonify({
+            'success': True,
+            'stats': {
+                'total': total,
+                'active': active,
+                'failed': failed
+            }
+        })
+    except Exception as e:
+        current_app.logger.error(f"Error getting header status: {str(e)}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
         }), 500

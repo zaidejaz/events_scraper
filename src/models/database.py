@@ -1,6 +1,7 @@
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy.sql import func
-from datetime import datetime
+from datetime import datetime, timedelta
+import json
 
 db = SQLAlchemy()
 
@@ -167,3 +168,42 @@ class VenueMapping(db.Model):
             excluded_seats[key].update(seat.strip() for seat in mapping.seats.split(','))
         
         return excluded_seats
+        
+class TicketmasterHeader(db.Model):
+    __tablename__ = 'ticketmaster_headers'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    headers = db.Column(db.Text, nullable=False)  # JSON string of headers
+    created_at = db.Column(db.DateTime, server_default=func.now())
+    last_used = db.Column(db.DateTime, nullable=True)
+    failures = db.Column(db.Integer, default=0)
+    is_active = db.Column(db.Boolean, default=True)
+    
+    def __init__(self, headers_dict):
+        self.headers = json.dumps(headers_dict)
+        self.failures = 0
+        self.is_active = True
+        
+    @property
+    def headers_dict(self):
+        return json.loads(self.headers)
+        
+    def mark_used(self):
+        self.last_used = datetime.now()
+        db.session.commit()
+        
+    def mark_failure(self):
+        self.failures += 1
+        if self.failures >= 3:
+            self.is_active = False
+        db.session.commit()
+        
+    @classmethod
+    def get_active_headers(cls):
+        """Get all active headers less than 24 hours old"""
+        expiry_time = datetime.now() - timedelta(hours=24)
+        return cls.query.filter(
+            cls.is_active == True,
+            cls.created_at > expiry_time,
+            cls.headers.like('%Cookie%')
+        ).order_by(cls.last_used.asc().nullsfirst()).all()
